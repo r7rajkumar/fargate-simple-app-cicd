@@ -297,12 +297,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4.2.2
 
-      - name: Set image URI from staging
-        id: image
-        run: |
-          echo "uri=${{ needs.deploy-staging.outputs.image-uri }}" >> $GITHUB_OUTPUT
-          echo "Image to deploy: ${{ needs.deploy-staging.outputs.image-uri }}"
-
       - name: Configure AWS via OIDC
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -310,7 +304,16 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Login to ECR
+        id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build image URI
+        id: image
+        run: |
+          SHORT_SHA=$(echo $GITHUB_SHA | cut -c1-7)
+          REGISTRY=${{ steps.login-ecr.outputs.registry }}
+          echo "uri=$REGISTRY/$ECR_REPOSITORY:$SHORT_SHA" >> $GITHUB_OUTPUT
+          echo "Deploying image: $REGISTRY/$ECR_REPOSITORY:$SHORT_SHA"
 
       - name: Download task definition
         run: |
@@ -335,7 +338,7 @@ jobs:
         with:
           task-definition: task-def.json
           container-name: ${{ env.CONTAINER_NAME }}
-          image: ${{ needs.deploy-staging.outputs.image-uri }}   # ← direct reference
+          image: ${{ steps.image.outputs.uri }}
 
       - name: Deploy to production ECS
         uses: aws-actions/amazon-ecs-deploy-task-definition@v1
@@ -346,7 +349,7 @@ jobs:
           wait-for-service-stability: true
 
       - name: Production deploy complete
-        run: echo "✅ Production deployment completed"
+        run: echo "✅ Production deployment complete"
   # ──────────────────────────────────────────
   # JOB 7 — Rollback (only if production fails)
   # ──────────────────────────────────────────
