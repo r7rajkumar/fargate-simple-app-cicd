@@ -286,16 +286,22 @@ jobs:
   # ──────────────────────────────────────────
   # JOB 6 — Deploy to Production (manual approval)
   # ──────────────────────────────────────────
+
+
   deploy-production:
     name: Deploy to Production
     runs-on: ubuntu-latest
     needs: deploy-staging
     environment: production
-    env:
-      IMAGE_URI: ${{ needs.deploy-staging.outputs.image-uri }}
 
     steps:
       - uses: actions/checkout@v4.2.2
+
+      - name: Set image URI from staging
+        id: image
+        run: |
+          echo "uri=${{ needs.deploy-staging.outputs.image-uri }}" >> $GITHUB_OUTPUT
+          echo "Image to deploy: ${{ needs.deploy-staging.outputs.image-uri }}"
 
       - name: Configure AWS via OIDC
         uses: aws-actions/configure-aws-credentials@v4
@@ -305,12 +311,6 @@ jobs:
 
       - name: Login to ECR
         uses: aws-actions/amazon-ecr-login@v2
-
-      # - name: Download task definition
-      #   run: |
-      #     aws ecs describe-task-definition \
-      #       --task-definition $ECS_TASK_DEFINITION \
-      #       --query taskDefinition > task-def.json
 
       - name: Download task definition
         run: |
@@ -335,7 +335,7 @@ jobs:
         with:
           task-definition: task-def.json
           container-name: ${{ env.CONTAINER_NAME }}
-          image: ${{ env.IMAGE_URI }}
+          image: ${{ needs.deploy-staging.outputs.image-uri }}   # ← direct reference
 
       - name: Deploy to production ECS
         uses: aws-actions/amazon-ecs-deploy-task-definition@v1
@@ -346,9 +346,7 @@ jobs:
           wait-for-service-stability: true
 
       - name: Production deploy complete
-        run: |
-          echo "✅ Production image: ${{ env.IMAGE_URI }}"
-
+        run: echo "✅ Production deployment complete"
   # ──────────────────────────────────────────
   # JOB 7 — Rollback (only if production fails)
   # ──────────────────────────────────────────
