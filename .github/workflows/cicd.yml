@@ -238,11 +238,30 @@ jobs:
           echo "image_uri=$REGISTRY/$ECR_REPOSITORY:${{ steps.vars.outputs.short_sha }}" \
             >> $GITHUB_OUTPUT
 
+      # - name: Download task definition
+      #   run: |
+      #     aws ecs describe-task-definition \
+      #       --task-definition $ECS_TASK_DEFINITION \
+      #       --query taskDefinition > task-def.json
+
       - name: Download task definition
         run: |
           aws ecs describe-task-definition \
             --task-definition $ECS_TASK_DEFINITION \
-            --query taskDefinition > task-def.json
+            --query taskDefinition > task-def-raw.json
+
+          # Strip keys not accepted by RegisterTaskDefinition API
+          jq 'del(
+            .taskDefinitionArn,
+            .revision,
+            .status,
+            .requiresAttributes,
+            .compatibilities,
+            .registeredAt,
+            .registeredBy,
+            .enableFaultInjection
+          )' task-def-raw.json > task-def.json
+
 
       - name: Inject new image into task definition
         id: task-def
@@ -287,11 +306,28 @@ jobs:
       - name: Login to ECR
         uses: aws-actions/amazon-ecr-login@v2
 
+      # - name: Download task definition
+      #   run: |
+      #     aws ecs describe-task-definition \
+      #       --task-definition $ECS_TASK_DEFINITION \
+      #       --query taskDefinition > task-def.json
+
       - name: Download task definition
         run: |
           aws ecs describe-task-definition \
             --task-definition $ECS_TASK_DEFINITION \
-            --query taskDefinition > task-def.json
+            --query taskDefinition > task-def-raw.json
+
+          jq 'del(
+            .taskDefinitionArn,
+            .revision,
+            .status,
+            .requiresAttributes,
+            .compatibilities,
+            .registeredAt,
+            .registeredBy,
+            .enableFaultInjection
+          )' task-def-raw.json > task-def.json
 
       - name: Inject image into task definition
         id: task-def
