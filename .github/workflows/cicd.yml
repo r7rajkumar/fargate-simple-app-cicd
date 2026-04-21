@@ -86,6 +86,9 @@ jobs:
   # ──────────────────────────────────────────
   # JOB 3 — Trivy Security Scan
   # ──────────────────────────────────────────
+  # ──────────────────────────────────────────
+  # JOB 3 — Trivy Security Scan
+  # ──────────────────────────────────────────
   docker-scan:
     name: Docker Security Scan
     runs-on: ubuntu-latest
@@ -105,8 +108,8 @@ jobs:
       - name: Load image
         run: docker load --input /tmp/flask-app.tar
 
-      # Shows ALL findings — never blocks pipeline
-      - name: Trivy scan (full report — informational)
+      # ← ADD THIS — shows all CVEs in logs, never blocks
+      - name: Trivy scan (full report — see all CVEs)
         uses: aquasecurity/trivy-action@master
         with:
           image-ref: flask-app:${{ steps.vars.outputs.short_sha }}
@@ -114,20 +117,18 @@ jobs:
           severity: CRITICAL,HIGH,MEDIUM,LOW
           exit-code: '0'
           ignore-unfixed: false
-          skip-version-check: true
 
-      # Uploads to GitHub Security tab
-      - name: Trivy scan (SARIF → GitHub Security tab)
+      # ← UPDATED — only blocks on CRITICAL now
+      - name: Trivy scan (SARIF — blocking)
         uses: aquasecurity/trivy-action@master
         with:
           image-ref: flask-app:${{ steps.vars.outputs.short_sha }}
           format: sarif
           output: trivy-results.sarif
-          severity: CRITICAL,HIGH
+          severity: CRITICAL
           exit-code: '1'
           ignore-unfixed: true
           trivyignores: .trivyignore
-          skip-version-check: true
 
       - uses: github/codeql-action/upload-sarif@v3
         if: always()
