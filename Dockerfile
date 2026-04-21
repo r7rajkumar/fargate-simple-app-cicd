@@ -5,13 +5,24 @@ WORKDIR /app
 
 COPY requirements.txt .
 
-RUN pip install --no-cache-dir --upgrade pip && \
+# Force latest OS patches FIRST before anything else
+RUN apt-get update && \
+    apt-get upgrade -y && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/* && \
+    pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
 # ─── Stage 2: Final image ───────────────────────────
 FROM python:3.11.12-slim-bookworm
 
 WORKDIR /app
+
+# Apply ALL available OS security patches
+RUN apt-get update && \
+    apt-get upgrade -y && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
 
 RUN addgroup --system appgroup && \
     adduser --system --ingroup appgroup appuser
