@@ -1,0 +1,29 @@
+# Git
+.git
+.gitignore
+
+# Python cache
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Tests — not needed in prod image
+tests/
+pytest.ini
+.coverage
+coverage.xml
+
+# CI/CD — not needed in image
+.github/
+
+# Local env
+.env
+.env.*
+venv/
+.venv/
+
+# Docs
+README.md
+*.md
