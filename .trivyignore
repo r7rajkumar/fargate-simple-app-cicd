@@ -1,27 +1,25 @@
 # .trivyignore
-# ─── Debian OS — will_not_fix / affected (no patch available) ───
-# apt
+
+# ─── Debian OS — no fix available ───────────────────
 CVE-2011-3374
-# bash
 TEMP-0841856-B18BAF
-# bsdutils / util-linux
 CVE-2022-0563
 CVE-2025-14104
 CVE-2026-3184
 CVE-2026-27456
-# coreutils
 CVE-2016-2781
 CVE-2017-18018
 CVE-2025-5278
-# dpkg
 CVE-2025-6297
-# gcc-12-base
 CVE-2022-27943
 
-# ─── pip old version from base image — replaced by pip-25.3 ───
+# ─── pip — old base image version, replaced by 25.3 ─
 CVE-2025-8869
 CVE-2026-1703
 
-# ─── setuptools old version from base image — replaced by 78.1.1 ───
+# ─── setuptools — old base image version, replaced by 78.1.1 ─
 CVE-2024-6345
 CVE-2025-47273
+
+# ─── wheel — old base image version, replaced by 0.46.2 ─
+CVE-2026-24049
