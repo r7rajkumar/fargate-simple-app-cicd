@@ -17,3 +17,11 @@ CVE-2025-5278
 CVE-2025-6297
 # gcc-12-base
 CVE-2022-27943
+
+# ─── pip old version from base image — replaced by pip-25.3 ───
+CVE-2025-8869
+CVE-2026-1703
+
+# ─── setuptools old version from base image — replaced by 78.1.1 ───
+CVE-2024-6345
+CVE-2025-47273
