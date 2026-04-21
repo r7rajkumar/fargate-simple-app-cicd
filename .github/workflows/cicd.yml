@@ -346,7 +346,7 @@ jobs:
           wait-for-service-stability: true
 
       - name: Production deploy complete
-        run: echo "✅ Production deployment complete"
+        run: echo "✅ Production deployment completed"
   # ──────────────────────────────────────────
   # JOB 7 — Rollback (only if production fails)
   # ──────────────────────────────────────────
