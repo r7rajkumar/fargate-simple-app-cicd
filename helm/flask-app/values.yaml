@@ -20,7 +20,7 @@ ingress:
     alb.ingress.kubernetes.io/healthcheck-interval-seconds: "30"
     alb.ingress.kubernetes.io/healthy-threshold-count: "2"
     alb.ingress.kubernetes.io/unhealthy-threshold-count: "3"
-    alb.ingress.kubernetes.io/security-groups: flask-eks-alb-sg
+    alb.ingress.kubernetes.io/security-groups: sg-0c0ea8a0eaef43fe7
     # ← ALB uses this SG for internet traffic
 
 resources:
