@@ -12,12 +12,12 @@ permissions:
   security-events: write
 
 env:
-  AWS_REGION: us-east-1
+  AWS_REGION:     us-east-1
   ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
-  EKS_CLUSTER: ${{ secrets.EKS_CLUSTER }}
-  NAMESPACE: flask-app
-  HELM_RELEASE: flask-app
-  IMAGE_TAG: ${{ github.sha }}
+  EKS_CLUSTER:    ${{ secrets.EKS_CLUSTER }}
+  NAMESPACE:      flask-app
+  HELM_RELEASE:   flask-app
+  
 
 jobs:
 
@@ -25,23 +25,20 @@ jobs:
   # JOB 1 — Unit Tests
   # ──────────────────────────────────────────
   unit-tests:
+    name: Unit Tests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4.2.2
-
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-
       - run: pip install -r requirements-test.txt
-
       - run: |
           pytest tests/unit/ -v \
             --cov=app \
             --cov-report=xml \
             --cov-report=term-missing \
             --cov-fail-under=80
-
       - uses: actions/upload-artifact@v4
         with:
           name: coverage-report
@@ -51,11 +48,18 @@ jobs:
   # JOB 2 — Build Docker Image
   # ──────────────────────────────────────────
   build:
+    name: Build Docker Image
     runs-on: ubuntu-latest
     needs: unit-tests
-
+    outputs:
+      short-sha: ${{ steps.vars.outputs.short_sha }}
     steps:
       - uses: actions/checkout@v4.2.2
+
+      - name: Set image tag
+        id: vars
+        run: |
+          echo "short_sha=$(echo $GITHUB_SHA | cut -c1-7)" >> $GITHUB_OUTPUT
 
       - uses: docker/setup-buildx-action@v3
 
@@ -65,7 +69,7 @@ jobs:
           context: .
           push: false
           no-cache: true
-          tags: flask-app:${{ env.IMAGE_TAG }}
+          tags: flask-app:${{ steps.vars.outputs.short_sha }}
           outputs: type=docker,dest=/tmp/flask-app.tar
 
       - uses: actions/upload-artifact@v4
@@ -74,14 +78,19 @@ jobs:
           path: /tmp/flask-app.tar
 
   # ──────────────────────────────────────────
-  # JOB 3 — Security Scan
+  # JOB 3 — Trivy Security Scan
   # ──────────────────────────────────────────
   docker-scan:
+    name: Docker Security Scan
     runs-on: ubuntu-latest
     needs: build
-
     steps:
       - uses: actions/checkout@v4.2.2
+
+      - name: Set image tag
+        id: vars
+        run: |
+          echo "short_sha=$(echo $GITHUB_SHA | cut -c1-7)" >> $GITHUB_OUTPUT
 
       - uses: actions/download-artifact@v4
         with:
@@ -94,7 +103,7 @@ jobs:
       - name: Trivy scan
         uses: aquasecurity/trivy-action@master
         with:
-          image-ref: flask-app:${{ env.IMAGE_TAG }}
+          image-ref: flask-app:${{ steps.vars.outputs.short_sha }}
           format: sarif
           output: trivy-results.sarif
           severity: CRITICAL,HIGH
@@ -111,11 +120,16 @@ jobs:
   # JOB 4 — Integration Tests
   # ──────────────────────────────────────────
   integration-tests:
+    name: Integration Tests
     runs-on: ubuntu-latest
     needs: docker-scan
-
     steps:
       - uses: actions/checkout@v4.2.2
+
+      - name: Set image tag
+        id: vars
+        run: |
+          echo "short_sha=$(echo $GITHUB_SHA | cut -c1-7)" >> $GITHUB_OUTPUT
 
       - uses: actions/download-artifact@v4
         with:
@@ -127,12 +141,13 @@ jobs:
           docker load --input /tmp/flask-app.tar
           docker run -d --name flask-test \
             -p 8080:8080 \
-            flask-app:${{ env.IMAGE_TAG }}
+            flask-app:${{ steps.vars.outputs.short_sha }}
 
       - name: Wait for app ready
         run: |
           for i in {1..15}; do
             curl -sf http://localhost:8080/ && echo "Ready!" && break
+            echo "Attempt $i/15 — waiting 2s..."
             sleep 2
           done
 
@@ -147,22 +162,33 @@ jobs:
           APP_URL: http://localhost:8080
         run: pytest tests/integration/ -v
 
+      - name: Container logs on failure
+        if: failure()
+        run: docker logs flask-test
+
       - name: Stop container
         if: always()
         run: docker stop flask-test && docker rm flask-test
 
   # ──────────────────────────────────────────
-  # JOB 5 — Deploy to Staging
+  # JOB 5 — Push to ECR + Deploy Staging
   # ──────────────────────────────────────────
   deploy-staging:
+    name: Deploy to Staging
     runs-on: ubuntu-latest
     needs: integration-tests
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    environment: staging
 
     steps:
       - uses: actions/checkout@v4.2.2
 
-      - name: Configure AWS
+      - name: Set image tag
+        id: vars
+        run: |
+          echo "short_sha=$(echo $GITHUB_SHA | cut -c1-7)" >> $GITHUB_OUTPUT
+
+      - name: Configure AWS via OIDC
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
@@ -182,9 +208,11 @@ jobs:
           REGISTRY: ${{ steps.login-ecr.outputs.registry }}
         run: |
           docker load --input /tmp/flask-app.tar
-          docker tag flask-app:${{ env.IMAGE_TAG }} \
-            $REGISTRY/$ECR_REPOSITORY:${{ env.IMAGE_TAG }}
-          docker push $REGISTRY/$ECR_REPOSITORY:${{ env.IMAGE_TAG }}
+          docker tag flask-app:${{ steps.vars.outputs.short_sha }} \
+            $REGISTRY/$ECR_REPOSITORY:${{ steps.vars.outputs.short_sha }}
+          docker push \
+            $REGISTRY/$ECR_REPOSITORY:${{ steps.vars.outputs.short_sha }}
+          echo "✅ Pushed: $REGISTRY/$ECR_REPOSITORY:${{ steps.vars.outputs.short_sha }}"
 
       - name: Setup kubectl
         uses: azure/setup-kubectl@v3
@@ -214,19 +242,24 @@ jobs:
           helm upgrade --install $HELM_RELEASE ./helm/flask-app \
             --namespace $NAMESPACE \
             --set image.repository=$REGISTRY/$ECR_REPOSITORY \
-            --set image.tag=${{ env.IMAGE_TAG }} \
+            --set image.tag=${{ steps.vars.outputs.short_sha }} \
             --set replicaCount=2 \
-            --wait --timeout 5m --atomic
+            --wait \
+            --timeout 5m \
+            --atomic
 
-      - name: Verify deployment
+      - name: Verify staging deployment
         run: |
+          kubectl rollout status deployment/$HELM_RELEASE \
+            -n $NAMESPACE --timeout=5m
           kubectl get pods -n $NAMESPACE
           kubectl get ingress -n $NAMESPACE
 
   # ──────────────────────────────────────────
-  # JOB 6 — Production
+  # JOB 6 — Deploy Production (manual approval)
   # ──────────────────────────────────────────
   deploy-production:
+    name: Deploy to Production
     runs-on: ubuntu-latest
     needs: deploy-staging
     environment: production
@@ -234,7 +267,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4.2.2
 
-      - name: Configure AWS
+      - name: Set image tag
+        id: vars
+        run: |
+          echo "short_sha=$(echo $GITHUB_SHA | cut -c1-7)" >> $GITHUB_OUTPUT
+
+      - name: Configure AWS via OIDC
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
@@ -267,11 +305,59 @@ jobs:
           helm upgrade --install $HELM_RELEASE ./helm/flask-app \
             --namespace $NAMESPACE \
             --set image.repository=$REGISTRY/$ECR_REPOSITORY \
-            --set image.tag=${{ env.IMAGE_TAG }} \
+            --set image.tag=${{ steps.vars.outputs.short_sha }} \
             --set replicaCount=2 \
-            --wait --timeout 5m --atomic
+            --wait \
+            --timeout 5m \
+            --atomic
 
-      - name: Verify production
+      - name: Verify production deployment
         run: |
-          kubectl rollout status deployment/$HELM_RELEASE -n $NAMESPACE
+          kubectl rollout status deployment/$HELM_RELEASE \
+            -n $NAMESPACE --timeout=5m
+          kubectl get pods -n $NAMESPACE
           kubectl get ingress -n $NAMESPACE
+          echo "✅ Production deployment complete"
+
+  # ──────────────────────────────────────────
+  # JOB 7 — Rollback (only if prod fails)
+  # ──────────────────────────────────────────
+  rollback:
+    name: Rollback Production
+    runs-on: ubuntu-latest
+    needs: deploy-production
+    if: failure()
+
+    steps:
+      - uses: actions/checkout@v4.2.2
+
+      - name: Configure AWS via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: 'v1.31.0'
+
+      - name: Setup Helm
+        uses: azure/setup-helm@v3
+        with:
+          version: 'v3.14.0'
+
+      - name: Update kubeconfig
+        run: |
+          aws eks update-kubeconfig \
+            --region $AWS_REGION \
+            --name $EKS_CLUSTER
+
+      - name: Helm rollback
+        run: |
+          echo "⏪ Rolling back to previous release"
+          helm rollback $HELM_RELEASE 0 \
+            --namespace $NAMESPACE \
+            --wait
+          kubectl get pods -n $NAMESPACE
+          echo "✅ Rollback complete"
